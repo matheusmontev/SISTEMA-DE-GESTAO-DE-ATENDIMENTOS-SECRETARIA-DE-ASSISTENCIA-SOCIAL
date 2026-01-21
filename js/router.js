@@ -19,6 +19,9 @@ export const Router = {
             case 'sector-dashboard':
                 import('./views/sector-view.js').then(module => module.render(this.contentContainer, userData));
                 break;
+            case 'search-dashboard':
+                import('./views/search-view.js').then(module => module.render(this.contentContainer, userData));
+                break;
             default:
                 this.contentContainer.innerHTML = '<h1>Bem-vindo! Selecione uma opção.</h1>';
         }

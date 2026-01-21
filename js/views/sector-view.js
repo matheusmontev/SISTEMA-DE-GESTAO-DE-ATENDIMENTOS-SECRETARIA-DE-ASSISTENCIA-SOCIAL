@@ -1,15 +1,13 @@
 import { db } from '../firebase-config.js';
-import { collection, getDocs, query, where, orderBy, doc, updateDoc, Timestamp, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, query, where, orderBy, doc, updateDoc, Timestamp, addDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { AuditService } from '../services/audit-service.js';
 
 export async function render(container, user) {
-    // Map user role to database sector key
-    // admin-view.js saves roles as: 'bolsa_familia', 'crianca_feliz', 'psicologia'
-    // reception-view.js saves targetSector as: 'bolsa_familia', 'crianca_feliz', 'psicologia'
-    // So we can use user.role directly if it matches, or we need a map.
+    console.log("Rendering Sector View for User:", user);
 
-    // Assuming user.role matches the targetSector values exactly for simplicity,
-    // or we handle the 'recepcao' case (though they shouldn't see this view).
+    // Map user role to database sector key
     const currentSectorKey = user.role;
+    console.log("Current Sector Key being queried:", currentSectorKey);
 
     container.innerHTML = `
         <h2>Painel do Setor: ${user.sector || currentSectorKey}</h2>
@@ -40,7 +38,7 @@ export async function render(container, user) {
         </div>
 
         <!-- Detail Modal (Hidden) -->
-        <div id="fichaModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); overflow-y: auto;">
+        <div id="fichaModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); overflow-y: auto; z-index: 1000;">
             <div class="card" style="width: 90%; max-width: 600px; margin: 30px auto; padding: 20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <h3 id="modalTitle">Atendimento</h3>
@@ -66,10 +64,10 @@ export async function render(container, user) {
         </div>
     `;
 
-    loadSectorFichas(currentSectorKey);
+    loadSectorFichas(currentSectorKey, user);
 
     // Event Listeners
-    document.getElementById('btnRefresh').addEventListener('click', () => loadSectorFichas(currentSectorKey));
+    document.getElementById('btnRefresh').addEventListener('click', () => loadSectorFichas(currentSectorKey, user));
     document.getElementById('btnCloseModal').addEventListener('click', () => {
         document.getElementById('fichaModal').style.display = 'none';
     });
@@ -97,17 +95,20 @@ export async function render(container, user) {
     });
 }
 
-async function loadSectorFichas(sectorKey) {
+async function loadSectorFichas(sectorKey, currentUser) {
     const tbody = document.getElementById('sectorTableBody');
     tbody.innerHTML = '<tr><td colspan="5" class="text-center">Carregando...</td></tr>';
 
     try {
+        console.log(`Searching for fichas with targetSector == "${sectorKey}" and status == "Aberta"`);
         const q = query(
             collection(db, "fichas"),
             where("targetSector", "==", sectorKey),
-            where("status", "==", "Aberta") // Only open fichas
+            where("status", "==", "Aberta")
         );
+
         const querySnapshot = await getDocs(q);
+        console.log("Query Results found:", querySnapshot.size);
 
         if (querySnapshot.empty) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhuma ficha pendente para este setor.</td></tr>';
@@ -132,18 +133,18 @@ async function loadSectorFichas(sectorKey) {
             tbody.appendChild(tr);
         });
     } catch (e) {
-        console.error(e);
-        tbody.innerHTML = `<tr><td colspan="5" style="color:red">Erro: ${e.message}</td></tr>`;
+        console.error("Error loading sector fichas:", e);
+        if (e.message.includes("requires an index")) {
+            tbody.innerHTML = `<tr><td colspan="5" style="color:red; font-size: 0.8rem;">Erro: Este filtro requer um índice no Firestore. Link no console.</td></tr>`;
+        } else {
+            tbody.innerHTML = `<tr><td colspan="5" style="color:red">Erro: ${e.message}</td></tr>`;
+        }
     }
 }
 
 async function addProcedure(fichaId, description, user, conclude = false) {
     try {
         const fichaRef = doc(db, "fichas", fichaId);
-
-        // 1. Add to subcollection (better for large history) OR Update Array (simpler for now)
-        // Let's use Array as per plan initially, or subcollection? 
-        // Plan said: "Sub-collection `procedures` for scalability." -> Let's do that.
 
         await addDoc(collection(db, "fichas", fichaId, "procedures"), {
             description: description,
@@ -152,12 +153,16 @@ async function addProcedure(fichaId, description, user, conclude = false) {
             createdBy: user.name || user.email
         });
 
-        // 2. Update status if conclude
         if (conclude) {
             await updateDoc(fichaRef, {
                 status: 'Concluída',
                 updatedAt: Timestamp.now()
             });
+
+            await AuditService.logChanges(fichaId, user.name || user.email, [
+                { field: "Status", oldVal: "Aberta", newVal: "Concluída" }
+            ]);
+
             alert('Ficha concluída com sucesso!');
         } else {
             alert('Procedimento registrado!');
@@ -165,19 +170,14 @@ async function addProcedure(fichaId, description, user, conclude = false) {
 
         document.getElementById('fichaModal').style.display = 'none';
         document.getElementById('procedureForm').reset();
-
-        // Refresh list
-        loadSectorFichas(user.role);
+        loadSectorFichas(user.role, user);
 
     } catch (e) {
         alert('Erro ao salvar: ' + e.message);
-        console.error(e);
     }
 }
 
-// Helper to open modal (Global scope hack)
-import { getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
+// Global scope hack
 window.openFicha = async (id) => {
     try {
         const docSnap = await getDoc(doc(db, "fichas", id));

@@ -58,16 +58,15 @@
             </div>
 
             <nav id="mainNav">
-                <!-- Navigation items will be injected based on role -->
-                <a href="#" class="nav-link active" data-target="dashboard">Início</a>
+                <a href="#" class="nav-link active" data-view="dashboard">🏠 Início</a>
+                <a href="#" class="nav-link" data-view="search-dashboard">🔍 Consultar CPF (Histórico)</a>
             </nav>
 
             <button id="logoutBtn" class="btn btn-outline-danger logout-btn">Sair</button>
         </aside>
 
         <main class="main-content" id="appContent">
-            <h1>Bem-vindo ao Sistema</h1>
-            <p>Selecione uma opção no menu.</p>
+            <h1>Carregando...</h1>
         </main>
     </div>
 
@@ -75,46 +74,64 @@
         import { auth, db } from './js/firebase-config.js';
         import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { Router } from './js/router.js';
 
         const logoutBtn = document.getElementById('logoutBtn');
         const userInfo = document.getElementById('userInfo');
+        const mainNav = document.getElementById('mainNav');
+        let currentUserData = null;
+
+        // Navigation Handler
+        mainNav.addEventListener('click', (e) => {
+            if (e.target.classList.contains('nav-link')) {
+                e.preventDefault();
+
+                // Active class
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                e.target.classList.add('active');
+
+                const view = e.target.getAttribute('data-view');
+                if (view === 'dashboard') {
+                    loadUserDashboard(currentUserData);
+                } else {
+                    Router.loadView(view, currentUserData);
+                }
+            }
+        });
+
+        function loadUserDashboard(userData) {
+            if (userData.role === 'admin') {
+                Router.loadView('admin-dashboard', userData);
+            } else if (userData.role === 'recepcao') {
+                Router.loadView('reception-dashboard', userData);
+            } else {
+                Router.loadView('sector-dashboard', userData);
+            }
+        }
 
         // Check Auth Status
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // User is signed in, fetch details from Firestore
                 try {
                     const userDoc = await getDoc(doc(db, "users", user.uid));
                     if (userDoc.exists()) {
-                        const userData = userDoc.data();
+                        currentUserData = userDoc.data();
+                        console.log("Usuário Logado no App:", currentUserData);
 
-                        if (!userData.active) {
+                        if (!currentUserData.active) {
                             alert('Sua conta está desativada. Contate o administrador.');
                             await signOut(auth);
                             return;
                         }
 
                         userInfo.innerHTML = `
-                            <strong>${userData.name || 'Usuário'}</strong><br>
-                            <small>${userData.role || 'Sem setor'}</small>
+                            <strong>${currentUserData.name || 'Usuário'}</strong><br>
+                            <small>${currentUserData.role || 'Sem setor'}</small>
                         `;
 
                         // Initialize Router
-                        import('./js/router.js').then(({ Router }) => {
-                            Router.init('appContent');
-
-                            // Simple routing logic based on Role
-                            // If admin, show admin dashboard
-                            // If others, show specific dashboards (to be implemented)
-                            if (userData.role === 'admin') {
-                                Router.loadView('admin-dashboard', userData);
-                            } else if (userData.role === 'recepcao') {
-                                Router.loadView('reception-dashboard', userData);
-                            } else {
-                                Router.loadView('sector-dashboard', userData);
-                            }
-                        });
-
+                        Router.init('appContent');
+                        loadUserDashboard(currentUserData);
 
                     } else {
                         userInfo.innerHTML = `<strong>${user.email}</strong><br><small>Perfil não encontrado no Banco de Dados.</small>`;
@@ -127,7 +144,6 @@
                     `;
                 }
             } else {
-                // No user is signed in, redirect to login
                 window.location.href = 'index.html';
             }
         });
