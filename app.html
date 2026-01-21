@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S.A.S. - Sistema</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .app-layout {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background-color: var(--white);
+            border-right: 1px solid #e0e0e0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .nav-link {
+            display: block;
+            padding: 10px;
+            color: var(--secondary-color);
+            text-decoration: none;
+            border-radius: var(--border-radius);
+            margin-bottom: 5px;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background-color: #e9ecef;
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+
+        .logout-btn {
+            margin-top: auto;
+            color: var(--danger-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-layout">
+        <aside class="sidebar">
+            <h2 class="mb-3" style="color: var(--primary-color);">S.A.S.</h2>
+            <div id="userInfo" class="mb-3" style="font-size: 0.9rem; color: #666;">
+                Carregando usuário...
+            </div>
+
+            <nav id="mainNav">
+                <!-- Navigation items will be injected based on role -->
+                <a href="#" class="nav-link active" data-target="dashboard">Início</a>
+            </nav>
+
+            <button id="logoutBtn" class="btn btn-outline-danger logout-btn">Sair</button>
+        </aside>
+
+        <main class="main-content" id="appContent">
+            <h1>Bem-vindo ao Sistema</h1>
+            <p>Selecione uma opção no menu.</p>
+        </main>
+    </div>
+
+    <script type="module">
+        import { auth, db } from './js/firebase-config.js';
+        import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const logoutBtn = document.getElementById('logoutBtn');
+        const userInfo = document.getElementById('userInfo');
+
+        // Check Auth Status
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // User is signed in, fetch details from Firestore
+                try {
+                    const userDoc = await getDoc(doc(db, "users", user.uid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+
+                        if (!userData.active) {
+                            alert('Sua conta está desativada. Contate o administrador.');
+                            await signOut(auth);
+                            return;
+                        }
+
+                        userInfo.innerHTML = `
+                            <strong>${userData.name || 'Usuário'}</strong><br>
+                            <small>${userData.role || 'Sem setor'}</small>
+                        `;
+
+                        // Initialize Router
+                        import('./js/router.js').then(({ Router }) => {
+                            Router.init('appContent');
+
+                            // Simple routing logic based on Role
+                            // If admin, show admin dashboard
+                            // If others, show specific dashboards (to be implemented)
+                            if (userData.role === 'admin') {
+                                Router.loadView('admin-dashboard', userData);
+                            } else if (userData.role === 'recepcao') {
+                                Router.loadView('reception-dashboard', userData);
+                            } else {
+                                Router.loadView('sector-dashboard', userData);
+                            }
+                        });
+
+
+                    } else {
+                        userInfo.innerHTML = `<strong>${user.email}</strong><br><small>Perfil não encontrado no Banco de Dados.</small>`;
+                    }
+                } catch (error) {
+                    console.error("Error fetching user data:", error);
+                    userInfo.innerHTML = `
+                        <strong style="color:red">Erro ao carregar:</strong><br>
+                        <small>${error.message}</small>
+                    `;
+                }
+            } else {
+                // No user is signed in, redirect to login
+                window.location.href = 'index.html';
+            }
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                window.location.href = 'index.html';
+            } catch (error) {
+                console.error("Logout Error:", error);
+                alert('Erro ao sair.');
+            }
+        });
+    </script>
+</body>
+
+</html>

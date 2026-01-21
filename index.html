@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S.A.S. - Login</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="login-container">
+        <div class="card login-card">
+            <div class="login-header">
+                <h1>Secretaria de Assistência Social</h1>
+                <p>Entre para acessar o sistema</p>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username" class="form-label">Usuário</label>
+                    <input type="text" id="username" class="form-control" placeholder="Digite seu usuário" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="form-label">Senha</label>
+                    <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required>
+                </div>
+
+                <div id="errorMessage" class="mb-3"
+                    style="color: var(--danger-color); display: none; font-size: 0.9rem;"></div>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Entrar</button>
+            </form>
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth } from './js/firebase-config.js';
+        import { signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const loginForm = document.getElementById('loginForm');
+        const errorMessage = document.getElementById('errorMessage');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Get username and append fake domain
+            let username = document.getElementById('username').value.trim();
+            if (!username.includes('@')) {
+                username = username + '@sistema.local';
+            }
+
+            const password = document.getElementById('password').value;
+            const btn = loginForm.querySelector('button');
+
+            try {
+                btn.disabled = true;
+                btn.textContent = 'Entrando...';
+                errorMessage.style.display = 'none';
+
+                // Attempt login
+                const userCredential = await signInWithEmailAndPassword(auth, username, password);
+                console.log("Logged in:", userCredential.user);
+
+                // Redirect
+                window.location.href = 'app.html';
+
+            } catch (error) {
+                console.error("Login Error:", error);
+                errorMessage.textContent = getFriendlyErrorMessage(error.code);
+                errorMessage.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Entrar';
+            }
+        });
+
+        function getFriendlyErrorMessage(errorCode) {
+            switch (errorCode) {
+                case 'auth/invalid-credential':
+                    return 'E-mail ou senha incorretos.';
+                case 'auth/user-not-found':
+                    return 'Usuário não encontrado.';
+                case 'auth/wrong-password':
+                    return 'Senha incorreta.';
+                case 'auth/too-many-requests':
+                    return 'Muitas tentativas. Tente novamente mais tarde.';
+                default:
+                    return 'Ocorreu um erro ao fazer login: ' + errorCode;
+            }
+        }
+    </script>
+</body>
+
+</html>
