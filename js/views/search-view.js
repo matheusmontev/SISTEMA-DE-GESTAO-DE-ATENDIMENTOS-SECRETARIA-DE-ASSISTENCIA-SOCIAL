@@ -141,7 +141,10 @@ function formatSector(sectorKey) {
     const map = {
         'bolsa_familia': 'Bolsa Família',
         'crianca_feliz': 'Criança Feliz',
-        'psicologia': 'Psicologia'
+        'psicologia': 'Psicologia',
+        'assistencia_social': 'Assistência Social',
+        'loas': 'LOAS',
+        'anexo_cras': 'Anexo do CRAS'
     };
     return map[sectorKey] || sectorKey;
 }

@@ -44,6 +44,9 @@ export async function render(container, user) {
                             <option value="bolsa_familia">Bolsa Família</option>
                             <option value="crianca_feliz">Criança Feliz</option>
                             <option value="psicologia">Psicologia</option>
+                            <option value="assistencia_social">Assistência Social</option>
+                            <option value="loas">LOAS</option>
+                            <option value="anexo_cras">Anexo do CRAS</option>
                         </select>
                     </div>
 

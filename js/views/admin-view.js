@@ -36,7 +36,41 @@ export async function render(container, adminUser) {
         <!-- Ficha Management -->
         <h2 class="mt-5">Visão Geral - Atendimentos</h2>
         <div class="card mt-3">
-            <h3>Todas as Fichas</h3>
+            <div class="row mb-3" style="display: flex; gap: 15px; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                <div style="flex: 2; min-width: 250px;">
+                    <label>Buscar (Nome, CPF ou Assunto)</label>
+                    <input type="text" id="filterSearch" class="form-control" placeholder="Digite para buscar...">
+                </div>
+                <div style="flex: 1; min-width: 150px;">
+                    <label>Status</label>
+                    <select id="filterStatus" class="form-control">
+                        <option value="">Todos</option>
+                        <option value="Aberta">Aberta</option>
+                        <option value="Concluída">Concluída</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 150px;">
+                    <label>Setor</label>
+                    <select id="filterSector" class="form-control">
+                        <option value="">Todos</option>
+                        <option value="bolsa_familia">Bolsa Família</option>
+                        <option value="crianca_feliz">Criança Feliz</option>
+                        <option value="psicologia">Psicologia</option>
+                        <option value="assistencia_social">Assistência Social</option>
+                        <option value="loas">LOAS</option>
+                        <option value="anexo_cras">Anexo do CRAS</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 150px;">
+                    <label>Data</label>
+                    <input type="date" id="filterDate" class="form-control">
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+                <h3>Todas as Fichas</h3>
+                <span id="fichaCounter" style="font-weight: bold; color: var(--primary-color);"></span>
+            </div>
             <div class="table-responsive">
                 <table class="table" style="width: 100%; border-collapse: collapse;">
                     <thead>
@@ -80,6 +114,9 @@ export async function render(container, adminUser) {
                             <option value="bolsa_familia">Bolsa Família</option>
                             <option value="crianca_feliz">Criança Feliz</option>
                             <option value="psicologia">Psicologia</option>
+                            <option value="assistencia_social">Assistência Social</option>
+                            <option value="loas">LOAS</option>
+                            <option value="anexo_cras">Anexo do CRAS</option>
                             <option value="admin">Administrador (Chefe)</option>
                         </select>
                     </div>
@@ -126,6 +163,9 @@ export async function render(container, adminUser) {
                                 <option value="bolsa_familia">Bolsa Família</option>
                                 <option value="crianca_feliz">Criança Feliz</option>
                                 <option value="psicologia">Psicologia</option>
+                                <option value="assistencia_social">Assistência Social</option>
+                                <option value="loas">LOAS</option>
+                                <option value="anexo_cras">Anexo do CRAS</option>
                             </select>
                         </div>
                         <div style="flex:1" class="form-group">
@@ -135,6 +175,11 @@ export async function render(container, adminUser) {
                                 <option value="Concluída">Concluída</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Assunto / Solicitação (Histórico)</label>
+                        <textarea id="editSubject" class="form-control" rows="3" required></textarea>
                     </div>
                     
                     <div class="mt-3" style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
@@ -180,28 +225,66 @@ export async function render(container, adminUser) {
 
     async function loadFichas() {
         const tbody = document.getElementById('allFichasTableBody');
+        const counter = document.getElementById('fichaCounter');
+
+        const fSearch = document.getElementById('filterSearch').value.toLowerCase();
+        const fStatus = document.getElementById('filterStatus').value;
+        const fSector = document.getElementById('filterSector').value;
+        const fDate = document.getElementById('filterDate').value;
+
         tbody.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
         try {
             const snap = await getDocs(collection(db, "fichas"));
             tbody.innerHTML = '';
-            snap.forEach(d => {
-                const f = d.data();
-                const date = f.createdAt ? new Date(f.createdAt.seconds * 1000).toLocaleDateString() : 'N/A';
+            let count = 0;
+
+            // Client side filtering for simplicity and to avoid complex indexes for now
+            const allFichas = [];
+            snap.forEach(d => allFichas.push({ id: d.id, ...d.data() }));
+
+            // Sort by Date (newest first)
+            allFichas.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+            allFichas.forEach(f => {
+                const dateObj = f.createdAt ? new Date(f.createdAt.seconds * 1000) : null;
+                const dateStr = dateObj ? dateObj.toLocaleDateString() : 'N/A';
+                const dateISO = dateObj ? dateObj.toISOString().split('T')[0] : '';
+
+                // Filtering Logic
+                if (fStatus && f.status !== fStatus) return;
+                if (fSector && f.targetSector !== fSector) return;
+                if (fDate && dateISO !== fDate) return;
+
+                if (fSearch) {
+                    const searchSource = `${f.citizenName} ${f.citizenCPF} ${f.subject || ''}`.toLowerCase();
+                    if (!searchSource.includes(fSearch)) return;
+                }
+
+                count++;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td style="padding: 10px;">${f.citizenName}</td>
                     <td style="padding: 10px;">${f.citizenCPF}</td>
                     <td style="padding: 10px;">${formatSector(f.targetSector)}</td>
-                    <td style="padding: 10px;">${date}</td>
+                    <td style="padding: 10px;">${dateStr}</td>
                     <td style="padding: 10px;"><span class="badge ${f.status === 'Aberta' ? 'bg-warning' : 'bg-success'}">${f.status}</span></td>
                     <td style="padding: 10px;">
-                        <button class="btn btn-sm btn-primary" onclick="openEditFicha('${d.id}')">Editar / Logs</button>
+                        <button class="btn btn-sm btn-primary" onclick="openEditFicha('${f.id}')">Editar / Logs</button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
+
+            if (count === 0) tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma ficha encontrada com estes filtros.</td></tr>';
+            counter.textContent = `Total: ${count}`;
+
         } catch (e) { tbody.innerHTML = `<tr><td colspan="6">Erro: ${e.message}</td></tr>`; }
     }
+
+    // Add Filter Listeners
+    ['filterSearch', 'filterStatus', 'filterSector', 'filterDate'].forEach(id => {
+        document.getElementById(id).addEventListener('input', loadFichas);
+    });
 
     // Init
     loadUsers();
@@ -240,6 +323,7 @@ export async function render(container, adminUser) {
         const newSt = document.getElementById('editStreet').value;
         const newSec = document.getElementById('editTargetSector').value;
         const newSta = document.getElementById('editStatus').value;
+        const newSub = document.getElementById('editSubject').value;
 
         try {
             const fref = doc(db, "fichas", fid);
@@ -251,9 +335,10 @@ export async function render(container, adminUser) {
             if (old.address?.street !== newSt) changes.push({ field: "Rua", oldVal: old.address?.street, newVal: newSt });
             if (old.targetSector !== newSec) changes.push({ field: "Setor", oldVal: old.targetSector, newVal: newSec });
             if (old.status !== newSta) changes.push({ field: "Status", oldVal: old.status, newVal: newSta });
+            if (old.subject !== newSub) changes.push({ field: "Assunto", oldVal: old.subject, newVal: newSub });
 
             if (changes.length > 0) {
-                await updateDoc(fref, { citizenName: newName, citizenCPF: newCPF, address: { neighborhood: newNh, street: newSt }, targetSector: newSec, status: newSta });
+                await updateDoc(fref, { citizenName: newName, citizenCPF: newCPF, address: { neighborhood: newNh, street: newSt }, targetSector: newSec, status: newSta, subject: newSub });
                 await AuditService.logChanges(fid, adminUser.name || adminUser.email, changes);
                 alert("Alterações salvas e auditadas!");
             } else { alert("Nenhuma mudança detectada."); }
@@ -281,6 +366,7 @@ export async function render(container, adminUser) {
         document.getElementById('editStreet').value = f.address?.street || '';
         document.getElementById('editTargetSector').value = f.targetSector;
         document.getElementById('editStatus').value = f.status;
+        document.getElementById('editSubject').value = f.subject || '';
 
         document.getElementById('editFichaModal').style.display = 'block';
 
@@ -326,11 +412,11 @@ async function CreateUserSecondaryApp(username, password, userData) {
 }
 
 function formatRole(role) {
-    const map = { 'admin': 'Chefe/Admin', 'recepcao': 'Recepção', 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia' };
+    const map = { 'admin': 'Chefe/Admin', 'recepcao': 'Recepção', 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
     return map[role] || role;
 }
 
 function formatSector(s) {
-    const map = { 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia' };
+    const map = { 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
     return map[s] || s;
 }
