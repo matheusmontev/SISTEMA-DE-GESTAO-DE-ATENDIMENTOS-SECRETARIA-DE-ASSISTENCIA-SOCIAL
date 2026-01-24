@@ -1,5 +1,6 @@
 import { db } from '../firebase-config.js';
 import { collection, addDoc, getDocs, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { AuditService } from './audit-service.js';
 
 const FICHAS_COLLECTION = 'fichas';
 
@@ -30,6 +31,12 @@ export const FichaService = {
                     }
                 ]
             });
+
+            // Log creation in Official Audit History
+            await AuditService.logChanges(docRef.id, createdByUserId, [
+                { field: "Criação", oldVal: "Nenhum", newVal: "Ficha Criada" }
+            ], fichaData.subject);
+
             return docRef.id;
         } catch (error) {
             console.error("Error creating ficha:", error);

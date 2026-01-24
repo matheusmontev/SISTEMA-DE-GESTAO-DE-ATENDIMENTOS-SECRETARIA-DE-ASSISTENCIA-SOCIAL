@@ -1,50 +1,66 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S.A.S. - Sistema</title>
+    <title>S.A.S. - Sistema de Gestão</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="css/style.css">
     <style>
-        .app-layout {
-            display: grid;
-            grid-template-columns: 250px 1fr;
-            min-height: 100vh;
-        }
-
-        .sidebar {
-            background-color: var(--white);
-            border-right: 1px solid #e0e0e0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .main-content {
-            padding: 20px;
-            overflow-y: auto;
-        }
-
         .nav-link {
-            display: block;
-            padding: 10px;
-            color: var(--secondary-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            color: var(--text-secondary);
             text-decoration: none;
-            border-radius: var(--border-radius);
-            margin-bottom: 5px;
-        }
-
-        .nav-link:hover,
-        .nav-link.active {
-            background-color: #e9ecef;
-            color: var(--primary-color);
+            border-radius: var(--round-md);
+            margin-bottom: 8px;
             font-weight: 500;
+            font-size: 0.95rem;
+            transition: var(--transition);
         }
 
-        .logout-btn {
-            margin-top: auto;
-            color: var(--danger-color);
+        .nav-link:hover {
+            background-color: var(--bg-main);
+            color: var(--primary);
+        }
+
+        .nav-link.active {
+            background-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .nav-link i {
+            font-size: 1.25rem;
+        }
+
+        .sidebar-header {
+            margin-bottom: 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-profile {
+            padding: 1rem;
+            background: var(--bg-main);
+            border-radius: var(--round-md);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.2rem;
         }
     </style>
 </head>
@@ -52,17 +68,32 @@
 <body>
     <div class="app-layout">
         <aside class="sidebar">
-            <h2 class="mb-3" style="color: var(--primary-color);">S.A.S.</h2>
-            <div id="userInfo" class="mb-3" style="font-size: 0.9rem; color: #666;">
-                Carregando usuário...
+            <div class="sidebar-header">
+                <i class="bi bi-shield-check" style="font-size: 2rem; color: var(--primary);"></i>
+                <h2 style="font-size: 1.5rem; margin: 0; letter-spacing: -0.5px;">S.A.S.</h2>
+            </div>
+            
+            <div id="userInfoPlaceholder" class="user-profile">
+                <!-- User Profile Content -->
+                <div class="user-avatar" id="userInitial">U</div>
+                <div id="userInfo" style="font-size: 0.85rem; color: var(--text-secondary); overflow: hidden;">
+                    <div style="font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="userName">Carregando...</div>
+                    <div id="userRole">Setor...</div>
+                </div>
             </div>
 
             <nav id="mainNav">
-                <a href="#" class="nav-link active" data-view="dashboard">🏠 Início</a>
-                <a href="#" class="nav-link" data-view="search-dashboard">🔍 Consultar CPF (Histórico)</a>
+                <a href="#" class="nav-link active" data-view="dashboard">
+                    <i class="bi bi-grid-1x2"></i> Início
+                </a>
+                <a href="#" class="nav-link" data-view="search-dashboard">
+                    <i class="bi bi-search"></i> Consultar CPF
+                </a>
             </nav>
 
-            <button id="logoutBtn" class="btn btn-outline-danger logout-btn">Sair</button>
+            <button id="logoutBtn" class="btn btn-outline-danger mt-auto">
+                <i class="bi bi-box-arrow-left"></i> Sair
+            </button>
         </aside>
 
         <main class="main-content" id="appContent">
@@ -124,10 +155,14 @@
                             return;
                         }
 
-                        userInfo.innerHTML = `
-                            <strong>${currentUserData.name || 'Usuário'}</strong><br>
-                            <small>${currentUserData.role || 'Sem setor'}</small>
-                        `;
+                        document.getElementById('userName').textContent = currentUserData.name || 'Usuário';
+                        document.getElementById('userRole').textContent = formatRole(currentUserData.role);
+                        document.getElementById('userInitial').textContent = (currentUserData.name || 'U').charAt(0).toUpperCase();
+
+                        function formatRole(role) {
+                            const map = { 'admin': 'Chefe/Admin', 'recepcao': 'Recepção', 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
+                            return map[role] || role;
+                        }
 
                         // Initialize Router
                         Router.init('appContent');

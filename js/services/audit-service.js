@@ -8,18 +8,20 @@ export const AuditService = {
      * @param {string} username - Name of the user making the change.
      * @param {Array} changes - Array of { field, oldVal, newVal }
      */
-    async logChanges(fichaId, username, changes) {
+    async logChanges(fichaId, username, changes, subject = "N/A") {
         if (!changes || changes.length === 0) return;
 
         try {
-            const auditRef = collection(db, "fichas", fichaId, "audit_logs");
+            const auditRef = collection(db, "audit_history");
 
             for (const change of changes) {
                 await addDoc(auditRef, {
+                    fichaId: fichaId,
                     field: change.field,
                     oldValue: change.oldVal || "Vazio",
                     newValue: change.newVal || "Vazio",
                     user: username,
+                    subject: subject,
                     timestamp: Timestamp.now()
                 });
             }
