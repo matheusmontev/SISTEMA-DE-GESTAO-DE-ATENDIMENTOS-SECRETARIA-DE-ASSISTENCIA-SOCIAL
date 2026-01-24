@@ -156,7 +156,12 @@ export async function render(container, user) {
 
     // Handle Conclusion
     document.getElementById('btnConclude').addEventListener('click', async () => {
-        if (!confirm("Deseja realmente finalizar esta ficha?")) return;
+        const confirmed = await ToastService.confirm(
+            "Finalizar Atendimento",
+            "Deseja realmente encerrar esta ficha? Esta ação não pode ser desfeita."
+        );
+        if (!confirmed) return;
+
         const fichaId = document.getElementById('currentFichaId').value;
         const desc = document.getElementById('procDesc').value;
 
@@ -172,23 +177,51 @@ export async function render(container, user) {
         try {
             const fichaRef = doc(db, "fichas", fichaId);
 
-            await addDoc(collection(db, "fichas", fichaId, "procedures"), {
-                description: description,
-                type: conclude ? 'Conclusão' : 'Atendimento',
-                timestamp: Timestamp.now(),
-                createdBy: user.name || user.email
-            });
+            // Step 1: Add the procedure
+            try {
+                await addDoc(collection(db, "fichas", fichaId, "procedures"), {
+                    description: description,
+                    type: conclude ? 'Conclusão' : 'Atendimento',
+                    timestamp: Timestamp.now(),
+                    createdBy: user.name || user.email
+                });
+            } catch (err) {
+                console.error("Error adding procedure:", err);
+                throw new Error("Erro ao registrar procedimento: Permissão negada ou falha na subcoleção.");
+            }
 
             if (conclude) {
-                const currentFicha = (await getDoc(fichaRef)).data();
-                await updateDoc(fichaRef, {
-                    status: 'Concluída',
-                    updatedAt: Timestamp.now()
-                });
+                // Step 2: Get current ficha data for audit
+                let currentFicha;
+                try {
+                    const snap = await getDoc(fichaRef);
+                    currentFicha = snap.data();
+                } catch (err) {
+                    console.error("Error reading ficha for conclusion:", err);
+                    throw new Error("Erro ao ler dados da ficha para finalizar.");
+                }
 
-                await AuditService.logChanges(fichaId, user.name || user.email, [
-                    { field: "Status", oldVal: "Aberta", newVal: "Concluída" }
-                ], currentFicha.subject);
+                // Step 3: Update ficha status
+                try {
+                    await updateDoc(fichaRef, {
+                        status: 'Concluída',
+                        updatedAt: Timestamp.now()
+                    });
+                } catch (err) {
+                    console.error("Error updating status:", err);
+                    throw new Error("Erro ao atualizar status da ficha: Permissão negada.");
+                }
+
+                // Step 4: Log changes (Audit)
+                try {
+                    await AuditService.logChanges(fichaId, user.name || user.email, [
+                        { field: "Status", oldVal: "Aberta", newVal: "Concluída" }
+                    ], currentFicha?.subject || "N/A");
+                } catch (err) {
+                    console.error("Error logging audit:", err);
+                    // We don't throw here to avoid blocking conclusion if only audit fails, 
+                    // but we log it.
+                }
 
                 ToastService.show('Ficha concluída com sucesso!');
             } else {
@@ -199,7 +232,7 @@ export async function render(container, user) {
             document.getElementById('procDesc').value = '';
 
         } catch (e) {
-            ToastService.show('Erro ao salvar: ' + e.message, 'error');
+            ToastService.show(e.message, 'error');
         }
     }
 
@@ -256,20 +289,25 @@ export async function render(container, user) {
             if (procSnap.empty) {
                 procDiv.innerHTML = '<div class="text-center p-4 text-secondary" style="background:var(--bg-main); border-radius:var(--round-md);">Nenhum atendimento anterior registrado.</div>';
             } else {
-                procDiv.innerHTML = '';
+                procDiv.innerHTML = '<div class="timeline"></div>';
+                const timelineContainer = procDiv.querySelector('.timeline');
+
                 procSnap.forEach(pDoc => {
                     const p = pDoc.data();
                     const pDate = p.timestamp ? new Date(p.timestamp.seconds * 1000).toLocaleString() : 'N/A';
-                    procDiv.innerHTML += `
-                        <div style="margin-bottom: 12px; padding: 1rem; background: #fff; border: 1px solid var(--border-color); border-left: 4px solid var(--primary); border-radius: var(--round-md);">
-                            <div class="d-flex justify-content-between mb-2" style="display:flex; justify-content:space-between; align-items:center;">
-                                <strong style="font-size: 0.85rem;"><i class="bi bi-calendar3 me-1"></i> ${pDate}</strong>
-                                <strong style="font-size: 0.85rem;"><i class="bi bi-person me-1"></i> ${p.createdBy}</strong>
-                            </div>
-                            <div class="badge bg-primary mb-2" style="font-size:0.7rem; background:var(--primary-light); color:var(--primary);">${p.type}</div>
-                            <div style="font-size: 0.9rem; line-height: 1.4; color: var(--text-secondary); white-space: pre-wrap;">${p.description}</div>
+                    const isConclusao = p.type === 'Conclusão';
+
+                    const item = document.createElement('div');
+                    item.className = `timeline-item procedure ${isConclusao ? 'conclusao' : ''}`;
+                    item.innerHTML = `
+                        <div class="timeline-icon"><i class="bi bi-${isConclusao ? 'flag-fill' : 'pencil-fill'}"></i></div>
+                        <div class="timeline-content">
+                            <span class="timeline-date">${pDate}</span>
+                            <div class="timeline-title">${p.type} por ${p.createdBy}</div>
+                            <div class="timeline-body" style="white-space: pre-wrap;">"${p.description}"</div>
                         </div>
                     `;
+                    timelineContainer.appendChild(item);
                 });
             }
 

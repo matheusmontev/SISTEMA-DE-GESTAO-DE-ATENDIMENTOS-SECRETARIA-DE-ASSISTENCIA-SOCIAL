@@ -544,7 +544,11 @@ export async function render(container, adminUser) {
 
     // Global Hacks
     window.toggleUser = async (uid, status) => {
-        if (!confirm("Alterar status do usuário?")) return;
+        const confirmed = await ToastService.confirm(
+            "Alterar Status",
+            `Deseja realmente ${status ? 'bloquear' : 'desbloquear'} este usuário?`
+        );
+        if (!confirmed) return;
         await updateDoc(doc(db, "users", uid), { active: !status });
     };
 
@@ -586,14 +590,39 @@ export async function render(container, adminUser) {
             procSnap.forEach(d => allLogs.push({ ...d.data(), type: 'procedure' }));
             allLogs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
             if (allLogs.length === 0) { logList.innerHTML = '<small>Nenhum log encontrado.</small>'; return; }
-            logList.innerHTML = '';
+            logList.innerHTML = '<div class="timeline"></div>';
+            const timelineContainer = logList.querySelector('.timeline');
+
             allLogs.forEach(l => {
                 const lDate = l.timestamp ? new Date(l.timestamp.seconds * 1000).toLocaleString() : 'N/A';
+                const item = document.createElement('div');
+
                 if (l.type === 'audit') {
-                    logList.innerHTML += `<div style="margin-bottom:8px; border-bottom:1px solid #eee; padding:8px; background:#fff; border-radius:4px;"><strong>${lDate} - 👤 ${l.user}</strong><br><span>${l.field}: <span style="color:red">${l.oldValue}</span> ➔ <span style="color:green">${l.newValue}</span></span></div>`;
+                    item.className = 'timeline-item audit';
+                    item.innerHTML = `
+                        <div class="timeline-icon"><i class="bi bi-gear-fill"></i></div>
+                        <div class="timeline-content">
+                            <span class="timeline-date">${lDate}</span>
+                            <div class="timeline-title">Alteração por ${l.user}</div>
+                            <div class="timeline-body">
+                                <strong>${l.field}:</strong> <span style="color:#b91c1c">${l.oldValue}</span> ➔ <span style="color:#15803d">${l.newValue}</span>
+                            </div>
+                            ${l.subject ? `<div class="timeline-footer">Assunto: ${l.subject}</div>` : ''}
+                        </div>
+                    `;
                 } else {
-                    logList.innerHTML += `<div style="margin-bottom:8px; border-bottom:1px solid #eee; padding:8px; background:#f0f7ff; border-radius:4px; border-left:4px solid #0d6efd;"><strong>${lDate} - 🩺 ${l.createdBy}</strong><br><small class="badge bg-primary">${l.type}</small><br><span>"${l.description}"</span></div>`;
+                    const isConclusao = l.type === 'Conclusão';
+                    item.className = `timeline-item procedure ${isConclusao ? 'conclusao' : ''}`;
+                    item.innerHTML = `
+                        <div class="timeline-icon"><i class="bi bi-${isConclusao ? 'flag-fill' : 'pencil-fill'}"></i></div>
+                        <div class="timeline-content">
+                            <span class="timeline-date">${lDate}</span>
+                            <div class="timeline-title">${l.type} por ${l.createdBy}</div>
+                            <div class="timeline-body">"${l.description}"</div>
+                        </div>
+                    `;
                 }
+                timelineContainer.appendChild(item);
             });
         } catch (e) { logList.innerHTML = '<small>Erro ao carregar logs.</small>'; }
     };
