@@ -297,3 +297,37 @@ textarea.form-control {
         opacity: 0.7;
     }
 }
+
+/* Toast Animations */
+.fade-in-right {
+    animation: fadeInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-out-right {
+    animation: fadeOutRight 0.4s cubic-bezier(0.7, 0, 0.84, 0);
+    opacity: 0;
+}
+
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeOutRight {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}

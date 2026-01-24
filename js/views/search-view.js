@@ -1,5 +1,6 @@
 import { db } from '../firebase-config.js';
 import { collection, query, where, getDocs, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { ToastService } from '../services/toast-service.js';
 
 export async function render(container, user) {
     container.innerHTML = `
@@ -39,7 +40,7 @@ export async function render(container, user) {
     document.getElementById('btnDoSearch').addEventListener('click', () => {
         const cpf = searchInput.value;
         if (cpf.length < 14) {
-            alert('Digite o CPF completo.');
+            ToastService.show('Digite o CPF completo.', 'warning');
             return;
         }
         performGlobalSearch(cpf);

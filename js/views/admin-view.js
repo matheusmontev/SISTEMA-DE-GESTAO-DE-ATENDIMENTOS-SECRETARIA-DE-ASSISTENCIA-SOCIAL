@@ -4,6 +4,7 @@ import { AuditService } from '../services/audit-service.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { UserService } from '../services/user-service.js';
 import { getAuth as getAuth2, createUserWithEmailAndPassword as createUser2 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { ToastService } from '../services/toast-service.js';
 
 export async function render(container, adminUser) {
     let unsubs = [];
@@ -14,42 +15,50 @@ export async function render(container, adminUser) {
         <div class="fade-in">
             <div class="d-flex justify-content-between align-items-center mb-4" style="display:flex; justify-content:space-between; align-items:center;">
                 <h2 style="margin:0;"><i class="bi bi-speedometer2 me-2" style="color:var(--primary);"></i> Dashboard Resolutivo</h2>
-                <div class="badge bg-primary">Monitoramento em Tempo Real</div>
+                <div style="display:flex; gap: 10px;">
+                    <button id="btnToggleStats" class="btn btn-outline-primary btn-sm"><i class="bi bi-graph-up-arrow me-1"></i> Ver Estatísticas</button>
+                    <button id="btnToggleUsers" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i> Gerenciar Equipe</button>
+                    <div class="badge bg-primary" style="display:flex; align-items:center;">Real-time</div>
+                </div>
             </div>
 
-            <!-- Stats Charts Row -->
-            <div class="row mb-4" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                <div class="card" style="flex: 1; min-width: 300px; padding: 1.5rem;">
-                    <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-pie-chart me-2"></i> Demandas por Setor</h4>
-                    <canvas id="chartSectors" height="200"></canvas>
-                </div>
-                <div class="card" style="flex: 1.5; min-width: 400px; padding: 1.5rem;">
-                    <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-graph-up me-2"></i> Fluxo de Atendimento (Hoje)</h4>
-                    <canvas id="chartFlow" height="200"></canvas>
+            <!-- Stats Charts Row (Hidden by default) -->
+            <div id="statsSection" style="display: none; transition: all 0.3s ease;">
+                <div class="row mb-4" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                    <div class="card" style="flex: 1; min-width: 300px; padding: 1.5rem;">
+                        <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-pie-chart me-2"></i> Demandas por Setor</h4>
+                        <canvas id="chartSectors" height="200"></canvas>
+                    </div>
+                    <div class="card" style="flex: 1.5; min-width: 400px; padding: 1.5rem;">
+                        <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-graph-up me-2"></i> Fluxo de Atendimento (Hoje)</h4>
+                        <canvas id="chartFlow" height="200"></canvas>
+                    </div>
                 </div>
             </div>
             
-            <!-- User Management -->
-            <div class="card mb-4">
-                <div class="d-flex justify-content-between align-items-center mb-4" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin:0; font-size: 1.25rem;"><i class="bi bi-people-fill me-2"></i> Usuários do Sistema</h3>
-                    <button id="btnNewUser" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo Usuário</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Nome</th>
-                                <th>Login</th>
-                                <th>Função</th>
-                                <th>Status</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersTableBody">
-                            <tr><td colspan="5" class="text-center text-secondary">Carregando usuários...</td></tr>
-                        </tbody>
-                    </table>
+            <!-- User Management (Hidden by default) -->
+            <div id="usersSection" style="display: none; transition: all 0.3s ease;">
+                <div class="card mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="margin:0; font-size: 1.25rem;"><i class="bi bi-people-fill me-2"></i> Usuários do Sistema</h3>
+                        <button id="btnNewUser" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo Usuário</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Login</th>
+                                    <th>Função</th>
+                                    <th>Status</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <tr><td colspan="5" class="text-center text-secondary">Carregando usuários...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -387,6 +396,22 @@ export async function render(container, adminUser) {
         counter.textContent = `Total: ${fichas.length}`;
     }
 
+    // Toggle Logic
+    document.getElementById('btnToggleStats').onclick = (e) => {
+        const section = document.getElementById('statsSection');
+        const isHidden = section.style.display === 'none';
+        section.style.display = isHidden ? 'block' : 'none';
+        e.target.innerHTML = isHidden ? '<i class="bi bi-eye-slash me-1"></i> Ocultar Estatísticas' : '<i class="bi bi-graph-up-arrow me-1"></i> Ver Estatísticas';
+        if (isHidden) initCharts(globalFichas);
+    };
+
+    document.getElementById('btnToggleUsers').onclick = (e) => {
+        const section = document.getElementById('usersSection');
+        const isHidden = section.style.display === 'none';
+        section.style.display = isHidden ? 'block' : 'none';
+        e.target.innerHTML = isHidden ? '<i class="bi bi-eye-slash me-1"></i> Ocultar Equipe' : '<i class="bi bi-people me-1"></i> Gerenciar Equipe';
+    };
+
     // Filter Listeners
     ['filterSearch', 'filterStatus', 'filterSector', 'filterDate'].forEach(id => {
         const el = document.getElementById(id);
@@ -407,9 +432,9 @@ export async function render(container, adminUser) {
         const role = document.getElementById('newUserRole').value;
         try {
             await CreateUserSecondaryApp(login, pass, { name, role, active: true, sector: formatRole(role) });
-            alert("Usuário criado!");
+            ToastService.show("Usuário criado com sucesso!");
             document.getElementById('userModal').style.display = 'none';
-        } catch (err) { alert("Erro: " + err.message); }
+        } catch (err) { ToastService.show("Erro: " + err.message, 'error'); }
     };
 
     // Edit Ficha
@@ -438,10 +463,10 @@ export async function render(container, adminUser) {
             if (changes.length > 0) {
                 await updateDoc(fref, { citizenName: newName, citizenCPF: newCPF, address: { neighborhood: newNh, street: newSt }, targetSector: newSec, status: newSta, subject: newSub });
                 await AuditService.logChanges(fid, adminUser.name || adminUser.email, changes, newSub);
-                alert("Alterações salvas!");
+                ToastService.show("Alterações salvas com sucesso!");
             }
             document.getElementById('editFichaModal').style.display = 'none';
-        } catch (err) { alert("Erro: " + err.message); }
+        } catch (err) { ToastService.show("Erro: " + err.message, 'error'); }
     };
 
     // Global Hacks

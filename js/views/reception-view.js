@@ -1,13 +1,14 @@
 import { FichaService } from '../services/ficha-service.js';
+import { ToastService } from '../services/toast-service.js';
 
 export async function render(container, user) {
     container.innerHTML = `
         <div class="fade-in">
             <h2 class="mb-4"><i class="bi bi-person-plus-fill me-2" style="color:var(--primary);"></i> Recepção - Atendimento Inicial</h2>
             
-            <div class="row" style="display: flex; gap: 2rem; flex-wrap: wrap;">
+            <div style="max-width: 800px; margin: 0 auto;">
                 <!-- Form Card -->
-                <div class="card" style="flex: 1.5; min-width: 350px;">
+                <div class="card">
                     <h3 class="mb-4" style="font-size: 1.25rem;"><i class="bi bi-file-earmark-text me-2"></i> Nova Ficha de Atendimento</h3>
                     <form id="fichaForm">
                         <div class="form-group">
@@ -63,17 +64,7 @@ export async function render(container, user) {
                         </button>
                     </form>
                 </div>
-
-                <!-- Recent Fichas -->
-                <div class="card" style="flex: 1; min-width: 300px; background: #f8fafc;">
-                    <h3 style="font-size: 1.25rem;"><i class="bi bi-clock-history me-2"></i> Atendimentos Recentes</h3>
-                    <div class="text-center mt-5">
-                        <i class="bi bi-journal-check" style="font-size: 3rem; color: var(--border-color);"></i>
-                        <p class="text-secondary mt-3">Seus registros recentes aparecerão aqui.</p>
-                    </div>
-                </div>
             </div>
-        </div>
     `;
 
     // Mask for CPF Logic
@@ -91,7 +82,7 @@ export async function render(container, user) {
     document.getElementById('btnSearchCPF').addEventListener('click', async () => {
         const cpf = cpfInput.value;
         if (cpf.length < 14) {
-            alert('Digite um CPF completo para buscar.');
+            ToastService.show('Digite um CPF completo para buscar.', 'warning');
             return;
         }
 
@@ -108,13 +99,13 @@ export async function render(container, user) {
                     document.getElementById('addressNeighborhood').value = data.address.neighborhood || '';
                     document.getElementById('addressStreet').value = data.address.street || '';
                 }
-                alert('Dados encontrados! Campos preenchidos.');
+                ToastService.show('Dados encontrados! Campos preenchidos.');
             } else {
-                alert('CPF não encontrado no sistema. Preencha os dados manualmente.');
+                ToastService.show('CPF não encontrado. Preencha manualmente.', 'info');
             }
         } catch (error) {
             console.error(error);
-            alert('Erro ao buscar CPF.');
+            ToastService.show('Erro ao buscar CPF.', 'error');
         } finally {
             btn.innerHTML = originalText;
             btn.disabled = false;
@@ -124,17 +115,17 @@ export async function render(container, user) {
     const form = document.getElementById('fichaForm');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btn = form.querySelector('button');
+        const btnSubmit = form.querySelector('button[type="submit"]');
         const cpf = cpfInput.value;
 
         if (!FichaService.isValidCPF(cpf)) {
-            alert("CPF inválido! Use o formato 000.000.000-00");
+            ToastService.show("CPF inválido! Use o formato 000.000.000-00", "warning");
             return;
         }
 
         try {
-            btn.disabled = true;
-            btn.textContent = 'Salvando...';
+            btnSubmit.disabled = true;
+            btnSubmit.textContent = 'Salvando...';
 
             const fichaData = {
                 citizenName: document.getElementById('citizenName').value,
@@ -148,15 +139,16 @@ export async function render(container, user) {
             };
 
             await FichaService.createFicha(fichaData, user.name || user.email);
+            ToastService.show("Ficha criada e encaminhada com sucesso!");
 
-            alert('Ficha criada com sucesso!');
-            form.reset();
-
-        } catch (error) {
-            alert('Erro: ' + error.message);
+            // Clear form
+            document.getElementById('fichaForm').reset();
+            document.getElementById('citizenCPF').value = '';
+        } catch (e) {
+            ToastService.show("Erro ao criar ficha: " + e.message, 'error');
         } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Criar Ficha de Atendimento';
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="bi bi-check-circle-fill"></i> Criar Ficha de Atendimento';
         }
     });
 }

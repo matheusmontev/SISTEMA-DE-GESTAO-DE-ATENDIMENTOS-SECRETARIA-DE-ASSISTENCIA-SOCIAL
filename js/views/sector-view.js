@@ -1,6 +1,7 @@
 import { db } from '../firebase-config.js';
 import { collection, getDocs, query, where, orderBy, doc, updateDoc, Timestamp, addDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { AuditService } from '../services/audit-service.js';
+import { ToastService } from '../services/toast-service.js';
 
 export async function render(container, user) {
     let unsubs = [];
@@ -189,16 +190,16 @@ export async function render(container, user) {
                     { field: "Status", oldVal: "Aberta", newVal: "Concluída" }
                 ], currentFicha.subject);
 
-                alert('Ficha concluída com sucesso!');
+                ToastService.show('Ficha concluída com sucesso!');
             } else {
-                alert('Procedimento registrado!');
+                ToastService.show('Procedimento registrado!');
             }
 
             document.getElementById('fichaModal').style.display = 'none';
             document.getElementById('procDesc').value = '';
 
         } catch (e) {
-            alert('Erro ao salvar: ' + e.message);
+            ToastService.show('Erro ao salvar: ' + e.message, 'error');
         }
     }
 
@@ -274,7 +275,7 @@ export async function render(container, user) {
 
             document.getElementById('fichaModal').style.display = 'block';
         } catch (e) {
-            alert("Erro ao abrir ficha: " + e.message);
+            ToastService.show("Erro ao abrir ficha: " + e.message, 'error');
         }
     };
 }

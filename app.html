@@ -109,6 +109,7 @@
         import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { Router } from './js/router.js';
+        import { ToastService } from './js/services/toast-service.js';
 
         const logoutBtn = document.getElementById('logoutBtn');
         const userInfo = document.getElementById('userInfo');
@@ -193,7 +194,7 @@
                 window.location.href = 'index.html';
             } catch (error) {
                 console.error("Logout Error:", error);
-                alert('Erro ao sair.');
+                ToastService.show('Erro ao sair.', 'error');
             }
         });
     </script>
