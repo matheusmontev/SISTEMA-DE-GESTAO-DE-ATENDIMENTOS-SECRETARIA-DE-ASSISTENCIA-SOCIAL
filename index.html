@@ -23,25 +23,25 @@
         }
 
         .login-logo {
-            width: 64px;
-            height: 64px;
-            background: var(--primary-light);
-            color: var(--primary);
-            border-radius: var(--round-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            width: 100%;
+            max-width: 250px;
             margin: 0 auto 1.5rem;
-            font-size: 2rem;
+            display: block;
+        }
+
+        .login-logo img {
+            width: 100%;
+            height: auto;
+            display: block;
         }
     </style>
 </head>
 
 <body>
     <div class="login-container">
-        <div class="card login-card">
+        <div class="card login-card" style="text-align: center;">
             <div class="login-logo">
-                <i class="bi bi-shield-lock"></i>
+                <img src="img/LOGO SEC SOCIAL.png" alt="Logo Secretaria de Assistência Social">
             </div>
             <div class="login-header">
                 <h1 style="font-size: 1.75rem; letter-spacing: -1px; margin-bottom: 0.5rem;">S.A.S.</h1>
