@@ -1,8 +1,9 @@
 import { db } from '../firebase-config.js';
-import { collection, getDocs, query, where, orderBy, doc, updateDoc, Timestamp, addDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, query, where, orderBy, doc, updateDoc, Timestamp, addDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { AuditService } from '../services/audit-service.js';
 
 export async function render(container, user) {
+    let unsubs = [];
     console.log("Rendering Sector View for User:", user);
     const currentSectorKey = user.role;
 
@@ -77,10 +78,69 @@ export async function render(container, user) {
         </div>
     `;
 
-    loadSectorFichas(currentSectorKey, user);
+    // Real-time Listener for Sector Fichas
+    const q = query(
+        collection(db, "fichas"),
+        where("targetSector", "==", currentSectorKey),
+        where("status", "==", "Aberta")
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+        displaySectorFichas(snap);
+    });
+    unsubs.push(unsub);
+
+    function displaySectorFichas(snap) {
+        const tbody = document.getElementById('sectorTableBody');
+        if (!tbody) return;
+
+        if (snap.empty) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary p-4">Nenhuma ficha pendente para este setor.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        snap.forEach((docSnap) => {
+            const f = docSnap.data();
+            const dateObj = f.createdAt ? new Date(f.createdAt.seconds * 1000) : null;
+            const dateStr = dateObj ? dateObj.toLocaleString() : 'N/A';
+
+            // Priority logic for Sector
+            let priorityClass = "";
+            let priorityIcon = "";
+            if (dateObj) {
+                const diffHours = (new Date() - dateObj) / (1000 * 60 * 60);
+                if (diffHours > 2) {
+                    priorityClass = "priority-alert";
+                    priorityIcon = '<i class="bi bi-exclamation-triangle-fill text-danger pulse-icon me-1"></i>';
+                } else if (diffHours > 1) {
+                    priorityClass = "priority-warning";
+                    priorityIcon = '<i class="bi bi-clock-history text-warning me-1"></i>';
+                }
+            }
+
+            const tr = document.createElement('tr');
+            if (priorityClass) tr.className = priorityClass;
+            tr.innerHTML = `
+                <td>${priorityIcon}<strong>${f.citizenName}</strong></td>
+                <td class="text-secondary">${f.citizenCPF}</td>
+                <td><span class="badge bg-primary" style="background:var(--primary-light); color:var(--primary); font-weight:500;">${f.subject}</span></td>
+                <td>${dateStr}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="openFicha('${docSnap.id}')">
+                        <i class="bi bi-play-fill"></i> Atender
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
 
     // Event Listeners
-    document.getElementById('btnRefresh').addEventListener('click', () => loadSectorFichas(currentSectorKey, user));
+    document.getElementById('btnRefresh').addEventListener('click', () => {
+        // Refresh is handled by onSnapshot, but we can re-trigger if UI gets stuck
+        // effectively doing nothing or a minor re-render
+    });
     document.getElementById('btnCloseModal').addEventListener('click', () => {
         document.getElementById('fichaModal').style.display = 'none';
     });
@@ -106,49 +166,6 @@ export async function render(container, user) {
 
         await addProcedure(fichaId, finalDesc, user, true);
     });
-
-    async function loadSectorFichas(sectorKey, currentUser) {
-        const tbody = document.getElementById('sectorTableBody');
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary">Carregando fichas...</td></tr>';
-
-        try {
-            const q = query(
-                collection(db, "fichas"),
-                where("targetSector", "==", sectorKey),
-                where("status", "==", "Aberta")
-            );
-
-            const querySnapshot = await getDocs(q);
-
-            if (querySnapshot.empty) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-secondary p-4">Nenhuma ficha pendente para este setor.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = '';
-            querySnapshot.forEach((docSnap) => {
-                const f = docSnap.data();
-                const date = f.createdAt ? new Date(f.createdAt.seconds * 1000).toLocaleString() : 'N/A';
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${f.citizenName}</strong></td>
-                    <td class="text-secondary">${f.citizenCPF}</td>
-                    <td><span class="badge bg-primary" style="background:var(--primary-light); color:var(--primary); font-weight:500;">${f.subject}</span></td>
-                    <td>${date}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="openFicha('${docSnap.id}')">
-                            <i class="bi bi-play-fill"></i> Atender
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        } catch (e) {
-            console.error(e);
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-3">Erro: ${e.message}</td></tr>`;
-        }
-    }
 
     async function addProcedure(fichaId, description, user, conclude = false) {
         try {
@@ -179,7 +196,6 @@ export async function render(container, user) {
 
             document.getElementById('fichaModal').style.display = 'none';
             document.getElementById('procDesc').value = '';
-            loadSectorFichas(user.role, user);
 
         } catch (e) {
             alert('Erro ao salvar: ' + e.message);

@@ -1,16 +1,32 @@
 import { db } from '../firebase-config.js';
-import { collection, getDocs, doc, updateDoc, setDoc, getDoc, query, orderBy, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, doc, updateDoc, setDoc, getDoc, query, orderBy, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { AuditService } from '../services/audit-service.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { UserService } from '../services/user-service.js';
 import { getAuth as getAuth2, createUserWithEmailAndPassword as createUser2 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 export async function render(container, adminUser) {
+    let unsubs = [];
+    let charts = {};
+    let globalFichas = [];
+
     container.innerHTML = `
         <div class="fade-in">
             <div class="d-flex justify-content-between align-items-center mb-4" style="display:flex; justify-content:space-between; align-items:center;">
-                <h2 style="margin:0;"><i class="bi bi-gear-fill me-2" style="color:var(--primary);"></i> Painel Administrativo</h2>
-                <div class="badge bg-primary">Modo Gestor Geral</div>
+                <h2 style="margin:0;"><i class="bi bi-speedometer2 me-2" style="color:var(--primary);"></i> Dashboard Resolutivo</h2>
+                <div class="badge bg-primary">Monitoramento em Tempo Real</div>
+            </div>
+
+            <!-- Stats Charts Row -->
+            <div class="row mb-4" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                <div class="card" style="flex: 1; min-width: 300px; padding: 1.5rem;">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-pie-chart me-2"></i> Demandas por Setor</h4>
+                    <canvas id="chartSectors" height="200"></canvas>
+                </div>
+                <div class="card" style="flex: 1.5; min-width: 400px; padding: 1.5rem;">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 1rem;"><i class="bi bi-graph-up me-2"></i> Fluxo de Atendimento (Hoje)</h4>
+                    <canvas id="chartFlow" height="200"></canvas>
+                </div>
             </div>
             
             <!-- User Management -->
@@ -213,136 +229,190 @@ export async function render(container, adminUser) {
         </div>
     `;
 
-    // Local functions to load data
-    async function loadUsers() {
+    // Real-time Listeners
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
         const tbody = document.getElementById('usersTableBody');
-        tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
-        try {
-            const snap = await getDocs(collection(db, "users"));
-            tbody.innerHTML = '';
-            snap.forEach(d => {
-                const u = d.data();
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${u.name}</strong></td>
-                    <td><code style="font-size:0.85rem;">${u.username || u.email}</code></td>
-                    <td>${formatRole(u.role)}</td>
-                    <td>
-                        <span class="badge ${u.active ? 'bg-success' : 'bg-danger'}" style="${!u.active ? 'background: #fee2e2; color: #b91c1c;' : ''}">
-                            ${u.active ? 'Ativo' : 'Bloqueado'}
-                        </span>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm ${u.active ? 'btn-outline-danger' : 'btn-primary'}" onclick="toggleUser('${d.id}', ${u.active})">
-                            <i class="bi bi-${u.active ? 'lock' : 'unlock'}"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Erro: ${e.message}</td></tr>`; }
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        snap.forEach(d => {
+            const u = d.data();
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${u.name}</strong></td>
+                <td><code style="font-size:0.85rem;">${u.username || u.email}</code></td>
+                <td>${formatRole(u.role)}</td>
+                <td>
+                    <span class="badge ${u.active ? 'bg-success' : 'bg-danger'}" style="${!u.active ? 'background: #fee2e2; color: #b91c1c;' : ''}">
+                        ${u.active ? 'Ativo' : 'Bloqueado'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-sm ${u.active ? 'btn-outline-danger' : 'btn-primary'}" onclick="toggleUser('${d.id}', ${u.active})">
+                        <i class="bi bi-${u.active ? 'lock' : 'unlock'}"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    });
+    unsubs.push(unsubUsers);
+
+    const unsubFichas = onSnapshot(collection(db, "fichas"), (snap) => {
+        globalFichas = [];
+        snap.forEach(d => globalFichas.push({ id: d.id, ...d.data() }));
+        initCharts(globalFichas);
+        applyFilters();
+    });
+    unsubs.push(unsubFichas);
+
+    function initCharts(fichas) {
+        const ctxSectors = document.getElementById('chartSectors');
+        const ctxFlow = document.getElementById('chartFlow');
+        if (!ctxSectors || !ctxFlow) return;
+
+        const sectorData = {};
+        fichas.forEach(f => {
+            const s = formatSector(f.targetSector);
+            sectorData[s] = (sectorData[s] || 0) + 1;
+        });
+
+        if (charts.sectors) charts.sectors.destroy();
+        charts.sectors = new Chart(ctxSectors, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(sectorData),
+                datasets: [{
+                    data: Object.values(sectorData),
+                    backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
+                    borderWidth: 0
+                }]
+            },
+            options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } } }
+        });
+
+        const flowData = new Array(24).fill(0);
+        const today = new Date().toLocaleDateString();
+        fichas.forEach(f => {
+            if (f.createdAt) {
+                const date = new Date(f.createdAt.seconds * 1000);
+                if (date.toLocaleDateString() === today) {
+                    flowData[date.getHours()]++;
+                }
+            }
+        });
+
+        if (charts.flow) charts.flow.destroy();
+        charts.flow = new Chart(ctxFlow, {
+            type: 'line',
+            data: {
+                labels: Array.from({ length: 24 }, (_, i) => `${i}h`),
+                datasets: [{
+                    label: 'Novas Fichas',
+                    data: flowData,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
+        });
     }
 
-    async function loadFichas() {
+    function applyFilters() {
+        const search = document.getElementById('filterSearch')?.value.toLowerCase() || "";
+        const status = document.getElementById('filterStatus')?.value || "";
+        const sector = document.getElementById('filterSector')?.value || "";
+        const date = document.getElementById('filterDate')?.value || "";
+
+        const filtered = globalFichas.filter(f => {
+            const matchesSearch = f.citizenName?.toLowerCase().includes(search) || f.citizenCPF?.includes(search) || f.subject?.toLowerCase().includes(search);
+            const matchesStatus = !status || f.status === status;
+            const matchesSector = !sector || f.targetSector === sector;
+            const matchesDate = !date || (f.createdAt && new Date(f.createdAt.seconds * 1000).toISOString().split('T')[0] === date);
+            return matchesSearch && matchesStatus && matchesSector && matchesDate;
+        });
+
+        displayFichas(filtered);
+    }
+
+    function displayFichas(fichas) {
         const tbody = document.getElementById('allFichasTableBody');
         const counter = document.getElementById('fichaCounter');
+        if (!tbody) return;
+        tbody.innerHTML = '';
 
-        const fSearch = document.getElementById('filterSearch').value.toLowerCase();
-        const fStatus = document.getElementById('filterStatus').value;
-        const fSector = document.getElementById('filterSector').value;
-        const fDate = document.getElementById('filterDate').value;
+        fichas.sort((a, b) => {
+            if (a.status !== b.status) return a.status === 'Aberta' ? -1 : 1;
+            return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+        });
 
-        tbody.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
-        try {
-            const snap = await getDocs(collection(db, "fichas"));
-            tbody.innerHTML = '';
-            let count = 0;
+        fichas.forEach(f => {
+            const dateObj = f.createdAt ? new Date(f.createdAt.seconds * 1000) : null;
+            const dateStr = dateObj ? dateObj.toLocaleString() : 'N/A';
+            let priorityClass = "";
+            let priorityIcon = "";
+            let waitTimeStr = "";
 
-            // Client side filtering for simplicity and to avoid complex indexes for now
-            const allFichas = [];
-            snap.forEach(d => allFichas.push({ id: d.id, ...d.data() }));
-
-            // Sort Logic: Open Fichas first, then by date (newest first)
-            allFichas.sort((a, b) => {
-                // If status is different, show 'Aberta' first
-                if (a.status !== b.status) {
-                    return a.status === 'Aberta' ? -1 : 1;
+            if (f.status === 'Aberta' && dateObj) {
+                const now = new Date();
+                const diffHours = (now - dateObj) / (1000 * 60 * 60);
+                if (diffHours > 2) {
+                    priorityClass = "priority-alert";
+                    priorityIcon = '<i class="bi bi-exclamation-triangle-fill text-danger pulse-icon me-1"></i>';
+                } else if (diffHours > 1) {
+                    priorityClass = "priority-warning";
+                    priorityIcon = '<i class="bi bi-clock-history text-warning me-1"></i>';
                 }
-                // If status is same, sort by creation date (newest first)
-                return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-            });
+                const diffMin = Math.floor((now - dateObj) / (1000 * 60));
+                waitTimeStr = `<br><small class="text-secondary">Espera: ${diffMin} min</small>`;
+            }
 
-            allFichas.forEach(f => {
-                const dateObj = f.createdAt ? new Date(f.createdAt.seconds * 1000) : null;
-                const dateStr = dateObj ? dateObj.toLocaleDateString() : 'N/A';
-                const dateISO = dateObj ? dateObj.toISOString().split('T')[0] : '';
-
-                // Filtering Logic
-                if (fStatus && f.status !== fStatus) return;
-                if (fSector && f.targetSector !== fSector) return;
-                if (fDate && dateISO !== fDate) return;
-
-                if (fSearch) {
-                    const searchSource = `${f.citizenName} ${f.citizenCPF} ${f.subject || ''}`.toLowerCase();
-                    if (!searchSource.includes(fSearch)) return;
-                }
-
-                count++;
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${f.citizenName}</strong></td>
-                    <td class="text-secondary">${f.citizenCPF}</td>
-                    <td><span class="badge bg-primary" style="background:var(--primary-light); color:var(--primary); font-weight:500;">${formatSector(f.targetSector)}</span></td>
-                    <td>${dateStr}</td>
-                    <td><span class="badge ${f.status === 'Aberta' ? 'bg-warning' : 'bg-success'}">${f.status}</span></td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="openEditFicha('${f.id}')">
-                            <i class="bi bi-pencil-square"></i> Detalhes
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            if (count === 0) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary p-4">Nenhuma ficha encontrada com estes filtros.</td></tr>';
-            counter.textContent = `Total: ${count}`;
-
-        } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro: ${e.message}</td></tr>`; }
+            const tr = document.createElement('tr');
+            if (priorityClass) tr.className = priorityClass;
+            tr.innerHTML = `
+                <td>${priorityIcon}<strong>${f.citizenName}</strong>${waitTimeStr}</td>
+                <td class="text-secondary">${f.citizenCPF}</td>
+                <td><span class="badge bg-primary" style="background:var(--primary-light); color:var(--primary);">${formatSector(f.targetSector)}</span></td>
+                <td>${dateStr}</td>
+                <td><span class="badge ${f.status === 'Aberta' ? 'bg-warning' : 'bg-success'}">${f.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="openEditFicha('${f.id}')">
+                        <i class="bi bi-pencil-square"></i> Detalhes
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        counter.textContent = `Total: ${fichas.length}`;
     }
 
-    // Add Filter Listeners
+    // Filter Listeners
     ['filterSearch', 'filterStatus', 'filterSector', 'filterDate'].forEach(id => {
-        document.getElementById(id).addEventListener('input', loadFichas);
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', applyFilters);
     });
 
-    // Init
-    loadUsers();
-    loadFichas();
-
-    // Event listeners for Modals
+    // Modals
     document.getElementById('btnNewUser').onclick = () => document.getElementById('userModal').style.display = 'block';
     document.getElementById('btnCancelUserModal').onclick = () => document.getElementById('userModal').style.display = 'none';
     document.getElementById('btnCloseEditModal').onclick = () => document.getElementById('editFichaModal').style.display = 'none';
 
-    // New User Logic (Secondary App)
+    // New User
     document.getElementById('newUserForm').onsubmit = async (e) => {
         e.preventDefault();
         const name = document.getElementById('newUserName').value;
         const login = document.getElementById('newUserLogin').value;
         const pass = document.getElementById('newUserPass').value;
         const role = document.getElementById('newUserRole').value;
-
         try {
-            const success = await CreateUserSecondaryApp(login, pass, { name, role, active: true, sector: formatRole(role) });
-            if (success) {
-                alert("Usuário criado!");
-                document.getElementById('userModal').style.display = 'none';
-                loadUsers();
-            }
+            await CreateUserSecondaryApp(login, pass, { name, role, active: true, sector: formatRole(role) });
+            alert("Usuário criado!");
+            document.getElementById('userModal').style.display = 'none';
         } catch (err) { alert("Erro: " + err.message); }
     };
 
-    // Edit Ficha Logic
+    // Edit Ficha
     document.getElementById('editFichaForm').onsubmit = async (e) => {
         e.preventDefault();
         const fid = document.getElementById('editFichaId').value;
@@ -353,7 +423,6 @@ export async function render(container, adminUser) {
         const newSec = document.getElementById('editTargetSector').value;
         const newSta = document.getElementById('editStatus').value;
         const newSub = document.getElementById('editSubject').value;
-
         try {
             const fref = doc(db, "fichas", fid);
             const old = (await getDoc(fref)).data();
@@ -369,25 +438,22 @@ export async function render(container, adminUser) {
             if (changes.length > 0) {
                 await updateDoc(fref, { citizenName: newName, citizenCPF: newCPF, address: { neighborhood: newNh, street: newSt }, targetSector: newSec, status: newSta, subject: newSub });
                 await AuditService.logChanges(fid, adminUser.name || adminUser.email, changes, newSub);
-                alert("Alterações salvas e auditadas!");
-            } else { alert("Nenhuma mudança detectada."); }
+                alert("Alterações salvas!");
+            }
             document.getElementById('editFichaModal').style.display = 'none';
-            loadFichas();
         } catch (err) { alert("Erro: " + err.message); }
     };
 
-    // Global Hacks for Buttons inside Table
+    // Global Hacks
     window.toggleUser = async (uid, status) => {
         if (!confirm("Alterar status do usuário?")) return;
         await updateDoc(doc(db, "users", uid), { active: !status });
-        loadUsers();
     };
 
     window.openEditFicha = async (fid) => {
         const snap = await getDoc(doc(db, "fichas", fid));
         if (!snap.exists()) return;
         const f = snap.data();
-
         document.getElementById('editFichaId').value = fid;
         document.getElementById('editCitizenName').value = f.citizenName;
         document.getElementById('editCitizenCPF').value = f.citizenCPF;
@@ -396,95 +462,61 @@ export async function render(container, adminUser) {
         document.getElementById('editTargetSector').value = f.targetSector;
         document.getElementById('editStatus').value = f.status;
         document.getElementById('editSubject').value = f.subject || '';
-
         document.getElementById('editFichaModal').style.display = 'block';
 
-        // Add Auto-save for subject
         let lastSubject = f.subject || '';
         document.getElementById('editSubject').onblur = async (e) => {
             const newSub = e.target.value;
             if (newSub === lastSubject) return;
-
             const indicator = document.getElementById('saveIndicator');
             indicator.style.display = 'inline';
             try {
                 await updateDoc(doc(db, "fichas", fid), { subject: newSub });
-                await AuditService.logChanges(fid, adminUser.name || adminUser.email,
-                    [{ field: "Assunto", oldVal: lastSubject, newVal: newSub }], newSub);
+                await AuditService.logChanges(fid, adminUser.name || adminUser.email, [{ field: "Assunto", oldVal: lastSubject, newVal: newSub }], newSub);
                 lastSubject = newSub;
-                console.log("Subject auto-saved");
-            } catch (err) { alert("Erro ao salvar assunto: " + err.message); }
+            } catch (err) { console.error(err); }
             setTimeout(() => indicator.style.display = 'none', 1000);
         };
 
-        // Load Unified Audit and Procedures Logs
         const logList = document.getElementById('auditLogList');
         logList.innerHTML = '<small>Carregando histórico...</small>';
         try {
             const auditSnap = await getDocs(query(collection(db, "audit_history"), where("fichaId", "==", fid)));
             const procSnap = await getDocs(collection(db, "fichas", fid, "procedures"));
-
             const allLogs = [];
             auditSnap.forEach(d => allLogs.push({ ...d.data(), type: 'audit' }));
             procSnap.forEach(d => allLogs.push({ ...d.data(), type: 'procedure' }));
-
-            // Sort by timestamp (newest first)
             allLogs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-
-            if (allLogs.length === 0) { logList.innerHTML = '<small>Nenhuma alteração registrada ainda.</small>'; return; }
+            if (allLogs.length === 0) { logList.innerHTML = '<small>Nenhum log encontrado.</small>'; return; }
             logList.innerHTML = '';
-
             allLogs.forEach(l => {
                 const lDate = l.timestamp ? new Date(l.timestamp.seconds * 1000).toLocaleString() : 'N/A';
-
                 if (l.type === 'audit') {
-                    logList.innerHTML += `
-                        <div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 5px; background: #fff; padding: 8px; border-radius: 4px;">
-                            <strong title="Alteração de Sistema">${lDate} - 👤 ${l.user}</strong><br>
-                            <small class="text-muted">Assunto: ${l.subject || 'N/A'}</small><br>
-                            <span>${l.field}: <span style="color:red">${l.oldValue}</span> ➔ <span style="color:green">${l.newValue}</span></span>
-                        </div>
-                    `;
+                    logList.innerHTML += `<div style="margin-bottom:8px; border-bottom:1px solid #eee; padding:8px; background:#fff; border-radius:4px;"><strong>${lDate} - 👤 ${l.user}</strong><br><span>${l.field}: <span style="color:red">${l.oldValue}</span> ➔ <span style="color:green">${l.newValue}</span></span></div>`;
                 } else {
-                    logList.innerHTML += `
-                        <div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 5px; background: #f0f7ff; padding: 8px; border-radius: 4px; border-left: 4px solid #0d6efd;">
-                            <strong title="Atendimento Técnico">${lDate} - 🩺 ${l.createdBy}</strong><br>
-                            <small class="badge bg-primary">${l.type === 'Conclusão' ? '🏁 Conclusão' : '📝 Atendimento'}</small><br>
-                            <span style="font-style: italic;">"${l.description}"</span>
-                        </div>
-                    `;
+                    logList.innerHTML += `<div style="margin-bottom:8px; border-bottom:1px solid #eee; padding:8px; background:#f0f7ff; border-radius:4px; border-left:4px solid #0d6efd;"><strong>${lDate} - 🩺 ${l.createdBy}</strong><br><small class="badge bg-primary">${l.type}</small><br><span>"${l.description}"</span></div>`;
                 }
             });
-        } catch (e) { console.error(e); logList.innerHTML = '<small>Erro ao carregar auditoria.</small>'; }
+        } catch (e) { logList.innerHTML = '<small>Erro ao carregar logs.</small>'; }
     };
-}
 
-// User Creation Helper (Secondary App Instance)
-async function CreateUserSecondaryApp(username, password, userData) {
-    const config = {
-        apiKey: "AIzaSyD3tsO5FLdvu5_LmCT7U1kW-2qhTfMRzRg",
-        authDomain: "social-assist-sistema.firebaseapp.com",
-        projectId: "social-assist-sistema",
-        storageBucket: "social-assist-sistema.firebasestorage.app",
-        messagingSenderId: "88500554526",
-        appId: "1:88500554526:web:1c2c3278f1a03d659cd70f"
-    };
-    const secondaryApp = initializeApp(config, "SecondaryApp_" + Date.now());
-    const secondaryAuth = getAuth2(secondaryApp);
-    let email = username.includes('@') ? username : username + "@sistema.local";
-    try {
+    function formatRole(role) {
+        const map = { 'admin': 'Chefe/Admin', 'recepcao': 'Recepção', 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
+        return map[role] || role;
+    }
+
+    function formatSector(s) {
+        const map = { 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
+        return map[s] || s;
+    }
+
+    async function CreateUserSecondaryApp(username, password, userData) {
+        const config = { apiKey: "AIzaSyD3tsO5FLdvu5_LmCT7U1kW-2qhTfMRzRg", authDomain: "social-assist-sistema.firebaseapp.com", projectId: "social-assist-sistema", storageBucket: "social-assist-sistema.firebasestorage.app", messagingSenderId: "88500554526", appId: "1:88500554526:web:1c2c3278f1a03d659cd70f" };
+        const secondaryApp = initializeApp(config, "SecondaryApp_" + Date.now());
+        const secondaryAuth = getAuth2(secondaryApp);
+        let email = username.includes('@') ? username : username + "@sistema.local";
         const cred = await createUser2(secondaryAuth, email, password);
         await UserService.createUserProfile(cred.user.uid, { ...userData, email, username });
         return true;
-    } catch (e) { throw e; }
-}
-
-function formatRole(role) {
-    const map = { 'admin': 'Chefe/Admin', 'recepcao': 'Recepção', 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
-    return map[role] || role;
-}
-
-function formatSector(s) {
-    const map = { 'bolsa_familia': 'Bolsa Família', 'crianca_feliz': 'Criança Feliz', 'psicologia': 'Psicologia', 'assistencia_social': 'Assistência Social', 'loas': 'LOAS', 'anexo_cras': 'Anexo do CRAS' };
-    return map[s] || s;
+    }
 }
