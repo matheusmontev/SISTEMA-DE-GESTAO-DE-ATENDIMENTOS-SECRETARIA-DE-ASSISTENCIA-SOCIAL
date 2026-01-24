@@ -5,6 +5,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { UserService } from '../services/user-service.js';
 import { getAuth as getAuth2, createUserWithEmailAndPassword as createUser2 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { ToastService } from '../services/toast-service.js';
+import { ReportService } from '../services/report-service.js';
 
 export async function render(container, adminUser) {
     let unsubs = [];
@@ -18,6 +19,7 @@ export async function render(container, adminUser) {
                 <div style="display:flex; gap: 10px;">
                     <button id="btnToggleStats" class="btn btn-outline-primary btn-sm"><i class="bi bi-graph-up-arrow me-1"></i> Ver Estatísticas</button>
                     <button id="btnToggleUsers" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i> Gerenciar Equipe</button>
+                    <button id="btnOpenReportModal" class="btn btn-primary btn-sm"><i class="bi bi-file-earmark-pdf me-1"></i> Gerar Relatórios</button>
                     <div class="badge bg-primary" style="display:flex; align-items:center;">Real-time</div>
                 </div>
             </div>
@@ -236,6 +238,30 @@ export async function render(container, adminUser) {
                 </div>
             </div>
         </div>
+
+        <!-- Report Modal -->
+        <div id="reportModal" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 1001;">
+            <div class="card" style="width: 400px; margin: 100px auto; padding: 2.5rem; border: none; box-shadow: var(--shadow-lg); text-align: center;">
+                <h3 class="mb-4"><i class="bi bi-file-earmark-pdf me-2" style="color:var(--primary);"></i> Exportar Relatório</h3>
+                <p class="text-secondary mb-4">Escolha o período do relatório de fichas.</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <button id="btnReportWeekly" class="btn btn-outline-primary w-100">Últimos 7 Dias (Semanal)</button>
+                    <button id="btnReportMonthly" class="btn btn-outline-primary w-100">Este Mês (Mensal)</button>
+                    <hr style="border-top: 1px solid var(--border-color); margin: 5px 0;">
+                    <div style="text-align: left;">
+                        <label style="font-size: 0.8rem; font-weight: 600;">Personalizado:</label>
+                        <div style="display: flex; gap: 5px; margin-top: 5px;">
+                            <input type="date" id="reportStart" class="form-control" style="font-size: 0.8rem;">
+                            <input type="date" id="reportEnd" class="form-control" style="font-size: 0.8rem;">
+                        </div>
+                        <button id="btnReportCustom" class="btn btn-primary w-100 mt-2">Gerar Personalizado</button>
+                    </div>
+                </div>
+                
+                <button id="btnCancelReport" class="btn btn-link mt-3" style="color: var(--text-secondary);">Cancelar</button>
+            </div>
+        </div>
     `;
 
     // Real-time Listeners
@@ -422,6 +448,53 @@ export async function render(container, adminUser) {
     document.getElementById('btnNewUser').onclick = () => document.getElementById('userModal').style.display = 'block';
     document.getElementById('btnCancelUserModal').onclick = () => document.getElementById('userModal').style.display = 'none';
     document.getElementById('btnCloseEditModal').onclick = () => document.getElementById('editFichaModal').style.display = 'none';
+
+    // Report Modal Logic
+    const rModal = document.getElementById('reportModal');
+    document.getElementById('btnOpenReportModal').onclick = () => rModal.style.display = 'block';
+    document.getElementById('btnCancelReport').onclick = () => rModal.style.display = 'none';
+
+    const getFullFichas = async () => {
+        const snap = await getDocs(collection(db, "fichas"));
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        return list;
+    };
+
+    document.getElementById('btnReportWeekly').onclick = async () => {
+        const now = new Date();
+        const start = new Date();
+        start.setDate(now.getDate() - 7);
+        const list = await getFullFichas();
+        await ReportService.generatePDF(list, "Semanal", { start, end: now });
+        rModal.style.display = 'none';
+        ToastService.show("Relatório Semanal gerado!");
+    };
+
+    document.getElementById('btnReportMonthly').onclick = async () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const list = await getFullFichas();
+        await ReportService.generatePDF(list, "Mensal", { start, end: now });
+        rModal.style.display = 'none';
+        ToastService.show("Relatório Mensal gerado!");
+    };
+
+    document.getElementById('btnReportCustom').onclick = async () => {
+        const startStr = document.getElementById('reportStart').value;
+        const endStr = document.getElementById('reportEnd').value;
+        if (!startStr || !endStr) {
+            ToastService.show("Selecione as datas de início e fim.", "warning");
+            return;
+        }
+        const start = new Date(startStr);
+        const end = new Date(endStr);
+        end.setHours(23, 59, 59);
+        const list = await getFullFichas();
+        await ReportService.generatePDF(list, "Personalizado", { start, end });
+        rModal.style.display = 'none';
+        ToastService.show("Relatório Personalizado gerado!");
+    };
 
     // New User
     document.getElementById('newUserForm').onsubmit = async (e) => {
